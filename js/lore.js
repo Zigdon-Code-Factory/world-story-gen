@@ -25,7 +25,7 @@ class LoreChat {
 
     const apiKey = this.getApiKey();
     if (!apiKey) {
-      const fallback = "I'd love to help build your world! But I need an OpenRouter API key first — click the ⚙️ settings gear to add one.";
+      const fallback = "Your lore has been saved and will influence simulation events. Add an OpenRouter API key in settings to enable AI world-building replies.";
       this.messages.push({ role: 'assistant', content: fallback });
       return fallback;
     }
@@ -74,7 +74,6 @@ class LoreChat {
   getLoreSummary() {
     // Combine all lore for simulation context
     return this.loreContext
-      .filter(m => m.role === 'assistant')
       .map(m => m.content)
       .join('\n\n');
   }

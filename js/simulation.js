@@ -36,6 +36,7 @@ class Simulation {
         notableCharacters: [], // Cross-settlement hall of fame
       };
     });
+    this.totalPopulation = this.population;
   }
 
   get population() {
@@ -44,6 +45,8 @@ class Simulation {
   }
 
   step() {
+    // Dice results belong to this turn, including during automatic playback.
+    this.pendingDiceRolls = [];
     this.turn++;
     const turnEvents = [];
 
@@ -135,7 +138,9 @@ class Simulation {
       ? 0.02 + (ageIndex * 0.008) + (settlement.tradeRoutes.length * 0.005)
       : -0.005; // Slight decline when overcrowded
     
-    const growth = Math.max(1, Math.floor(settlement.population * growthRate));
+    const growth = growthRate > 0
+      ? Math.max(1, Math.floor(settlement.population * growthRate))
+      : Math.min(-1, Math.floor(settlement.population * growthRate));
     settlement.population = Math.max(5, settlement.population + growth);
     settlement.foodStore = Math.max(0, settlement.foodStore + Math.floor(foodCap * 0.1) - Math.floor(settlement.population * 0.05));
 
@@ -443,6 +448,7 @@ class Simulation {
   }
 
   play(stepCallback) {
+    this.pause();
     this.playing = true;
     const interval = Math.max(100, 2000 - (this.speed * 190));
     this.playInterval = setInterval(() => {

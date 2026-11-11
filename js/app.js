@@ -5,6 +5,17 @@ let simulation = null;
 let simCanvas = null;
 let simCtx = null;
 let selectedSettlement = null;
+let stepInProgress = false;
+
+function syncPlaybackControls() {
+  const playing = !!simulation?.playing;
+  document.getElementById('btn-play').classList.toggle('hidden', playing);
+  document.getElementById('btn-pause').classList.toggle('hidden', !playing);
+  document.getElementById('btn-step').disabled = playing || stepInProgress;
+  for (const id of ['btn-play', 'btn-history', 'btn-back-create']) {
+    document.getElementById(id).disabled = stepInProgress;
+  }
+}
 
 // === Screen Management ===
 function showScreen(id) {
@@ -118,7 +129,14 @@ document.getElementById('btn-start-sim').addEventListener('click', () => {
   const loreSummary = loreChat.getLoreSummary();
   const loreKeywords = loreChat.getLoreKeywords();
   
+  if (simulation) simulation.pause();
   simulation = new Simulation(regions, loreSummary, loreKeywords);
+  simulation.mapWidth = mapEditor.canvas.width;
+  simulation.mapHeight = mapEditor.canvas.height;
+  simulation.setSpeed(Number(document.getElementById('sim-speed').value));
+  selectedSettlement = null;
+  document.getElementById('settlement-detail').classList.add('hidden');
+  document.getElementById('event-log-list').replaceChildren();
   worldHistory.events = [];
   
   showScreen('screen-sim');
@@ -141,11 +159,11 @@ function initSimView() {
   updateSimUI([]);
   
   // Click on canvas to select settlement
-  simCanvas.addEventListener('click', (e) => {
+  simCanvas.onclick = (e) => {
     if (!simulation) return;
     const rect = simCanvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const x = (e.clientX - rect.left) * simulation.mapWidth / rect.width;
+    const y = (e.clientY - rect.top) * simulation.mapHeight / rect.height;
     
     // Find nearest settlement
     let nearest = null;
@@ -165,7 +183,7 @@ function initSimView() {
       selectedSettlement = null;
       document.getElementById('settlement-detail').classList.add('hidden');
     }
-  });
+  };
 }
 
 function showSettlementDetail(s) {
@@ -233,6 +251,8 @@ function renderSimMap() {
   }
   
   // Draw civ territories
+  ctx.save();
+  ctx.scale(w / simulation.mapWidth, h / simulation.mapHeight);
   for (const civ of simulation.civilizations) {
     const alpha = civ.alive ? '44' : '15';
     
@@ -319,10 +339,12 @@ function renderSimMap() {
     ctx.textBaseline = 'middle';
     ctx.fillText(`${civ.name} — ${age.emoji} ${age.name}`, civ.center.x, civ.center.y - 30);
   }
+  ctx.restore();
 }
 
 function updateSimUI(events) {
   if (!simulation) return;
+  syncPlaybackControls();
   
   document.getElementById('turn-counter').textContent = simulation.turn;
   document.getElementById('total-pop').textContent = formatPop(simulation.totalPopulation);
@@ -421,40 +443,37 @@ function sleep(ms) {
 
 // === Sim Controls ===
 async function doStep() {
-  if (!simulation) return;
-  const events = simulation.step();
-  const diceRolls = simulation.getDiceRolls();
-  
-  if (diceRolls.length > 0 && !simulation.playing) {
-    await showDiceRolls(diceRolls);
+  if (!simulation || simulation.playing || stepInProgress) return;
+  stepInProgress = true;
+  syncPlaybackControls();
+  try {
+    const events = simulation.step();
+    const diceRolls = simulation.getDiceRolls();
+    if (diceRolls.length > 0) await showDiceRolls(diceRolls);
+    updateSimUI(events);
+  } finally {
+    stepInProgress = false;
+    syncPlaybackControls();
   }
-  
-  updateSimUI(events);
 }
 
 document.getElementById('btn-step').addEventListener('click', doStep);
 
 document.getElementById('btn-play').addEventListener('click', () => {
-  if (!simulation) return;
-  document.getElementById('btn-play').classList.add('hidden');
-  document.getElementById('btn-pause').classList.remove('hidden');
-  
-  simulation.play((events) => {
-    updateSimUI(events);
-    
-    if (simulation.isFinished()) {
-      simulation.pause();
-      document.getElementById('btn-play').classList.remove('hidden');
-      document.getElementById('btn-pause').classList.add('hidden');
-    }
-  });
+  if (!simulation || stepInProgress) return;
+  simulation.play(handlePlaybackStep);
+  syncPlaybackControls();
 });
+
+function handlePlaybackStep(events) {
+  if (simulation.isFinished()) simulation.pause();
+  updateSimUI(events);
+}
 
 document.getElementById('btn-pause').addEventListener('click', () => {
   if (!simulation) return;
   simulation.pause();
-  document.getElementById('btn-play').classList.remove('hidden');
-  document.getElementById('btn-pause').classList.add('hidden');
+  syncPlaybackControls();
 });
 
 document.getElementById('sim-speed').addEventListener('input', (e) => {
@@ -462,25 +481,21 @@ document.getElementById('sim-speed').addEventListener('input', (e) => {
   const wasPlaying = simulation.playing;
   simulation.setSpeed(parseInt(e.target.value));
   if (wasPlaying) {
-    simulation.play((events) => {
-      updateSimUI(events);
-      if (simulation.isFinished()) {
-        simulation.pause();
-        document.getElementById('btn-play').classList.remove('hidden');
-        document.getElementById('btn-pause').classList.add('hidden');
-      }
-    });
+    simulation.play(handlePlaybackStep);
   }
+  syncPlaybackControls();
 });
 
 document.getElementById('btn-back-create').addEventListener('click', () => {
   if (simulation && simulation.playing) simulation.pause();
+  syncPlaybackControls();
   showScreen('screen-create');
 });
 
 // === History Screen ===
 document.getElementById('btn-history').addEventListener('click', () => {
   if (simulation && simulation.playing) simulation.pause();
+  syncPlaybackControls();
   
   const timeline = document.getElementById('history-timeline');
   timeline.innerHTML = '';

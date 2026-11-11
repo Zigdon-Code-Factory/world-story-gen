@@ -16,9 +16,17 @@ class MapEditor {
   }
 
   _resize() {
-    const rect = this.canvas.parentElement.getBoundingClientRect();
-    this.canvas.width = rect.width - 24;
-    this.canvas.height = rect.height - 80; // account for toolbar + status
+    const rect = this.canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const scaleX = rect.width / this.canvas.width;
+    const scaleY = rect.height / this.canvas.height;
+    for (const region of this.regions) {
+      region.points = region.points.map(p => ({ x: p.x * scaleX, y: p.y * scaleY }));
+      region.center = this._centroid(region.points);
+    }
+    this.currentPoints = this.currentPoints.map(p => ({ x: p.x * scaleX, y: p.y * scaleY }));
+    this.canvas.width = Math.round(rect.width);
+    this.canvas.height = Math.round(rect.height);
     this.render();
   }
 
